@@ -1,0 +1,1156 @@
+#!/usr/bin/env python
+import argparse
+import logging
+from bisect import bisect_left
+from pathlib import Path
+
+import matplotlib.lines as lines
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import torch
+import umap.plot
+import umap.umap_ as umap
+from astropy import units
+from astropy.coordinates import SkyCoord
+from astropy.table import Table
+from matplotlib.colors import Normalize
+from matplotlib.gridspec import GridSpecFromSubplotSpec
+from sklearn.preprocessing import RobustScaler
+from torch.utils.data import DataLoader, random_split
+
+from quest_qso import LOCAL_PATH as local_path
+from quest_qso.mlconfig import MLConfig
+from quest_qso.models.info_vae import InfoSpecVAE
+from quest_qso.utils import load as ld
+from quest_qso.utils import resources as res
+from quest_qso.utils import spec_dataset as sd
+from quest_qso.utils import utilities
+
+## ========================================================================= ##
+## ===================== General setup for everything ====================== ##
+## ========================================================================= ##
+
+logger = logging.getLogger("quest_qso." + __name__)
+
+flux_autofit = False
+scale_input = True
+
+TGEN = torch.Generator().manual_seed(42)
+
+## ========================================================================= ##
+## ======================== Functions============================= ##
+## ========================================================================= ##
+
+
+def _return(show, fig, ax):
+    """Shorthand return function to show a plot and return the corresponding figure
+    and axis.
+
+    :param show: Flag indicating whether to show the plot or not.
+    :type show: Bool
+
+    :param fig: The figure object corresponding to the plot.
+    :type fig: Figure
+
+    :param ax: The axis object corresponding to the plot.
+    :type ax: Axis
+
+    :return: Tuple containing a figure and axis objects.
+    :rtype: tuple
+    """
+    if show:
+        plt.show()
+
+    return fig, ax
+
+
+## ========================================================================= ##
+
+
+def _set_flag(color, flag):
+    color = color[:]
+    if flag is not None:
+        color[color == flag] = np.nan
+    else:
+        color = color[:]
+    return color
+
+
+## ========================================================================= ##
+
+
+def _make_subgs(fig, gs_outer, make_extra_ax=False):
+    """Helper function. Populates a gridspec with a subgrid with the desired layout.
+
+    :param fig: Parent figure on which to draw the gridspec on.
+    :type fig: matplotlib.figure.Figure
+    :param gs_outer: Outer gridspec.
+    :type gs_outer: _type_
+    :return: _description_
+    :rtype: _type_
+    """
+    extra_ax = None
+
+    gs = GridSpecFromSubplotSpec(
+        2,
+        2,
+        width_ratios=[4, 1],
+        height_ratios=[1, 4],
+        subplot_spec=gs_outer,
+        wspace=0,
+        hspace=0,
+    )
+    ax_scatter = fig.add_subplot(gs[1, 0])
+    ax_x_hist = fig.add_subplot(gs[0, 0], sharex=ax_scatter)
+    ax_y_hist = fig.add_subplot(gs[1, 1], sharey=ax_scatter)
+
+    ax_x_hist.tick_params(
+        axis="both",
+        which="both",
+        left=False,
+        right=False,
+        top=False,
+        bottom=False,
+        labelbottom=False,
+        labelleft=False,
+    )
+
+    ax_y_hist.tick_params(
+        axis="both",
+        which="both",
+        left=False,
+        right=False,
+        top=False,
+        bottom=False,
+        labelbottom=False,
+        labelleft=False,
+    )
+
+    if make_extra_ax:
+        extra_ax = fig.add_subplot(gs[0, 1])
+    return ax_scatter, ax_x_hist, ax_y_hist, extra_ax
+
+
+## ========================================================================= ##
+
+
+def _make_canvas(parent_fig=None):
+    """Helper function. Creates a canvas with specified subplots and gridspec layout.
+    If no parent figure is passed, a new one will be generated.
+
+    :param parent_fig: Parent figure to use for creating the canvas. Default is None.
+    :type parent_fig: matplotlib.figure.Figure or None
+
+    :return: Figure and a four element axis tuple (scatter and marginal histogram,
+    histogram #1, histogram #2, colorbar axis).
+    :rtype: tuple
+    """
+    if parent_fig is None:
+        fig = plt.figure(figsize=(14, 5))
+    else:
+        fig = parent_fig
+
+    gs_outer = fig.add_gridspec(
+        2, 3, width_ratios=[5 / 13, 4 / 13, 4 / 13], height_ratios=[1, 7]
+    )
+
+    ax_scatter, ax_x_hist, ax_y_hist, _ = _make_subgs(fig, gs_outer[:, 0:1])
+
+    ax_zero = [ax_scatter, ax_x_hist, ax_y_hist]
+    ax_one = fig.add_subplot(gs_outer[1, 1])
+    ax_two = fig.add_subplot(gs_outer[1, 2])
+
+    ax_cbar = fig.add_subplot(gs_outer[0, 1:])
+
+    return fig, (ax_zero, ax_one, ax_two, ax_cbar)
+
+
+## ========================================================================= ##
+
+
+def make_scatter_marginal_plot(
+    ax, embedding, color, inds=None, set_labels=True, **kwargs
+):
+    """Create a scatter plot with marginal histograms. Meant to use `ax_zero`
+    generated by `_make_canvas`. `kwargs` are paseed to `plt.scatter`.
+
+    :param ax: Three element axis list generated by _make_canvas.
+    :type ax: list
+
+    :param embedding: The embedding data for creating the scatter plot and histograms.
+    :type embedding: numpy.ndarray
+
+    :param color: Color coding for each point in the scatter plot.
+    :type color: numpy.ndarray
+
+    :param inds: Indices to specify subset of data to plot, or order the data with.
+    Default is None.
+    :type inds: list or numpy.ndarray
+
+    :param **kwargs: Additional keyword arguments passed to the scatter plot.
+
+    :return: Scatter plot object.
+    :rtype: matplotlib.collections.PathCollection
+    """
+    if inds is None:
+        inds = np.arange(len(color))
+
+    sc = ax[0].scatter(
+        embedding[:, 0][inds],
+        embedding[:, 1][inds],
+        s=2.5,
+        alpha=0.5,
+        c=color[inds],
+        **kwargs,
+    )
+    if set_labels:
+        ax[0].set_xlabel("UMAP embed dim. #0")
+        ax[0].set_ylabel("UMAP embed dim. #1")
+
+    ax[1].hist(
+        embedding[:, 0],
+        bins=30,
+        facecolor="lightgrey",
+        edgecolor="grey",
+        density=True,
+    )
+    ax[2].hist(
+        embedding[:, 1],
+        orientation="horizontal",
+        bins=30,
+        facecolor="lightgrey",
+        edgecolor="grey",
+        density=True,
+    )
+
+    return sc
+
+
+## ========================================================================= ##
+
+
+def plot_umap_representation(
+    embedding,
+    color,
+    title,
+    flag=None,
+    sort=True,
+    fig=None,
+    ax=None,
+    show=True,
+    save=None,
+    **kwargs,
+):
+    """Plot an UMAP embedding in a scatter plot with corresponding marginal histograms,
+    and histogram showing the distributions of the color coding property. `kwargs` are
+    passed to `ax.scatter`.
+
+    :param embedding: The embedding produced by UMAP.
+    :type embedding: numpy.ndarray
+
+    :param color: Color coding for each point in the scatter plot.
+    :type color: numpy.ndarray
+
+    :param title: Title of the plot.
+    :type title: str
+
+    :param flag: If color coding includes a flag value to indicate an invalid value, it can
+    be specified here. If a value in color matches the flag value, then it will be set to `np.nan`
+    before plotting, effectively removing the point from the scatter. Default is None.
+    :type flag: float or None
+
+    :param fig: Existing figure object to use for plotting. Default is None.
+    :type fig: matplotlib.figure.Figure or None
+
+    :param ax: List of axis objects to plot the scatter plot and histograms. Default is None.
+    :type ax: list of matplotlib.axes.Axes or None
+
+    :param show: Whether to show the plot or not. Default is True.
+    :type show: bool
+
+    :param save: File path to save the plot as a PNG image. Default is None.
+    :type save: str or None
+
+    :param **kwargs: Additional keyword arguments passed to the scatter plot.
+
+    :return: Tuple containing a figure and axis objects.
+    :rtype: tuple
+    """
+    if flag is not None:
+        color = color[:]
+        color[color == flag] = 0
+
+    # better color plotting
+    if sort:
+        sorting_inds = np.argsort(color)
+    else:
+        sorting_inds = np.ones_like(color, dtype=bool)
+
+    if ax is None and fig is None:
+        fig, ax = _make_canvas()
+
+    fig.suptitle(title)
+    sc = make_scatter_marginal_plot(ax[0], embedding, color, sorting_inds, **kwargs)
+
+    cbar = fig.colorbar(sc, cax=ax[-1], orientation="horizontal")
+    # this only affects the colorbar as far as I can tell
+    cbar.solids.set_alpha(1)
+
+    ax[1].hist(
+        color,
+        bins=25,
+        facecolor="lightgrey",
+        edgecolor="grey",
+        range=[sc.colorbar.vmin, sc.colorbar.vmax],
+    )
+    ax[1].set_xlabel("ColorBar range")
+
+    ax[2].hist(
+        color,
+        bins=25,
+        facecolor="lightgrey",
+        edgecolor="grey",
+    )
+    ax[2].set_xlabel("Full range")
+
+    if save is not None:
+        save.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save / (title + ".png"), format="png", dpi=200)
+
+    _return(show, fig, ax)
+
+
+## ========================================================================= ##
+
+
+def plot_line_properties(
+    embedding,
+    title,
+    df,
+    norms=[None, None],
+    flags=[None, None],
+    cmaps=["viridis", "viridis"],
+    show=True,
+    save=None,
+    **kwargs,
+):
+    """Plot a UMAP representation of line luminosity and rest frame EW for a given line.
+
+    :param embedding: The embedding produced by UMAP.
+    :type embedding: numpy.ndarray
+
+    :param title: Title for the plot.
+    :type title: str
+
+    :param df: Dataframe containing line properties.
+    :type df: pandas.DataFrame
+
+    :param norms: List of `norm`, passed to `plt.scatter`. Default is [None, None].
+    :type norms: list
+
+    :param flags: List flag values. If the color coding includes a flag value to
+    indicate an invalid value, it can be specified here. If a value in `color` matches
+    the flag value, then it will be set to `np.nan` before plotting, effectively removing
+    the point from the scatter. Default is [None, None].
+    :type flags: list
+
+    :param cmaps: List of `cmaps`, passed to `plt.scatter`. Default is ["viridis", "viridis"].
+    :type cmaps: list
+
+    :param show: Whether to show the plot or not. Default is True.
+    :type show: bool
+
+    :param save: File path to save the plot as a PNG image. Default is None.
+    :type save: str or None
+
+    :param **kwargs: Additional keyword arguments passed to both scatter plots.
+
+    :return: Tuple of tuple. The first tuple contain the figure objects, the second the axis objects.
+    :rtype: tuple
+    """
+    # TODO: Fix doc
+    arr = np.vstack(df[title])
+
+    # there is possibly a better way to do this but it is 20.33 and I cannot think of it
+    # inspiration from the second example: https://matplotlib.org/stable/gallery/subplots_axes_and_figures/subfigures.html#sphx-glr-gallery-subplots-axes-and-figures-subfigures-py
+    fig, axs = plt.subplots(2, 1, figsize=(14, 10.5))
+    gs_1 = axs[0].get_subplotspec()
+    gs_2 = axs[1].get_subplotspec()
+
+    for _ax in axs:
+        _ax.remove()
+
+    fig.add_artist(lines.Line2D([0.05, 0.95], [0.5, 0.5], color="k"))
+
+    fig_upper = fig.add_subfigure(gs_1)
+    fig_lower = fig.add_subfigure(gs_2)
+
+    fig_upper, ax_upper = _make_canvas(fig_upper)
+    fig_lower, ax_lower = _make_canvas(fig_lower)
+
+    if np.any(np.isnan(arr[:, 3])):
+        logger.warning(
+            "There are NaN values in the line luminosity array. "
+            "These will be ignored in the plot."
+        )
+
+    if np.any(np.isnan(arr[:, 5])):
+        logger.warning(
+            "There are NaN values in the rest frame EW array. "
+            "These will be ignored in the plot."
+        )
+
+    plot_umap_representation(
+        embedding,
+        arr[np.isfinite(arr[:, 3]), 3],
+        r"$\log({\rm L}_{\rm line}$)",
+        fig=fig_upper,
+        ax=ax_upper,
+        show=False,
+        flag=flags[0],
+        norm=norms[0],
+        cmap=cmaps[0],
+        **kwargs,
+    )
+
+    plot_umap_representation(
+        embedding,
+        arr[np.isfinite(arr[:, 5]), 5],
+        "Rest frame EW",
+        fig=fig_lower,
+        ax=ax_lower,
+        show=False,
+        norm=norms[1],
+        flag=flags[1],
+        cmap=cmaps[1],
+        **kwargs,
+    )
+    fig.suptitle(title, x=0.9)
+
+    if save is not None:
+        fig.savefig(save / (title + ".png"), format="png", dpi=200)
+
+    if show:
+        plt.show()
+    return (fig_upper, fig_lower), (ax_upper, ax_lower)
+
+
+## ========================================================================= ##
+
+
+def _umap_latent_color_i(
+    embedding, color, sort=True, fig=None, ax=None, show=True, **kwargs
+):
+    """Plot UMAP latent space color coded by some feature. Said feature is
+    sorted before plotting to make sure. This behaviour can be disabled by passing
+    `sort = False` to the function call. `kwargs` are passed to `scatter`.
+
+    :param embedding: The embedding produced by UMAP.
+    :type embedding: numpy.ndarray
+
+    :param color: Color coding for each point in the scatter plot.
+    :type color: numpy.ndarray
+
+    :param sort: Whether to sort the color coding or not. Default is True.
+    :type sort: bool
+
+    :param fig: Existing figure object to use for plotting. Default is None.
+    :type fig: matplotlib.figure.Figure or None
+
+    :param ax: Existing axis object object to use for plotting. Default is None.
+    :type ax: matplotlib.axes.Axes or None
+
+    :param show: Whether to show the plot or not. Default is True.
+    :type show: bool
+
+    :param **kwargs: Additional keyword arguments passed to the scatter plot.
+
+    :return: Tuple containing a figure and axis objects.
+    :rtype: tuple
+    """
+    # TODO: pass flag to here as well, update doc
+    if sort:
+        sorting_inds = np.argsort(color)
+    else:
+        sorting_inds = np.arange(len(color))
+
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(14, 8), layout="constrained")
+
+    sc = ax.scatter(
+        embedding[:, 0][sorting_inds],
+        embedding[:, 1][sorting_inds],
+        s=2.0,
+        alpha=0.5,
+        c=color[sorting_inds],
+        **kwargs,
+    )
+    ax.set_xlabel("UMAP embed dim. #0")
+    ax.set_ylabel("UMAP embed dim. #1")
+
+    cbar = fig.colorbar(sc, ax=ax, orientation="vertical")
+    cbar.solids.set_alpha(1)
+
+    _return(show, fig, ax)
+
+
+## ========================================================================= ##
+
+
+def umap_latent_colors(embedding, z, clip=None, show=True, **kwargs):
+    """Plot a UMAP embedding color coded by each latent space dimension.
+    `kwargs` are passed to `ax.scatter`.
+
+    :param embedding: The embedding produced by UMAP.
+    :type embedding: numpy.ndarray
+
+    :param z: Color coding for each point in the scatter plot.
+    :type z: numpy.ndarray
+
+    :param show: Whether to show the plot or not. Default is True.
+    :type show: bool
+
+    :param **kwargs: Additional keyword arguments passed to the scatter plot.
+
+    :return: Tuple containing a figure and axis objects.
+    :rtype: tuple
+    """
+    r_c_subplots = utilities.alt_almost_square(z.shape[1])
+    fig, ax = plt.subplots(*r_c_subplots, figsize=(14, 8), layout="constrained")
+    pairs = [(i, j) for i in range(r_c_subplots[0]) for j in range(r_c_subplots[1])]
+
+    if clip is not None:
+        if np.isscalar(clip):
+            clip_ = [-clip, clip]
+        else:
+            clip_ = clip
+
+        z_ = np.array([np.clip(z.T[i], clip_[0], clip_[1]) for i in range(z.shape[1])])
+    else:
+        z_ = np.array([z.T[i] for i in z.shape[1]])
+
+    for n, pair in enumerate(pairs):
+        try:
+            _umap_latent_color_i(
+                embedding,
+                z_[n],
+                fig=fig,
+                ax=ax[*pair],
+                show=False,
+                **kwargs,
+            )
+            ax[*pair].text(0.05, 0.05, f"LD: {n}", transform=ax[*pair].transAxes)
+        except IndexError:
+            ax[*pair].remove()
+
+    _return(show, fig, ax)
+
+
+## ========================================================================= ##
+
+
+def get_objects(embedding, df, xmin, xmax, ymin, ymax):
+    """
+    Get objects from a DataFrame based on the boundaries set by x and y coordinates
+    in the UMAP embedding.
+
+    :param embedding: UMAP embedding.
+    :type embedding: numpy.ndarray
+
+    :param df: The DataFrame containing objects to filter.
+    :type df: pandas.DataFrame
+
+    :param xmin: The minimum value for the x-coordinate.
+    :type xmin: float
+
+    :param xmax: The maximum value for the x-coordinate.
+    :type xmax: float
+
+    :param ymin: The minimum value for the y-coordinate.
+    :type ymin: float
+
+    :param ymax: The maximum value for the y-coordinate.
+    :type ymax: float
+
+    :return: Subset of the DataFrame containing objects within the specified x and y boundaries.
+    :rtype: pandas.DataFrame
+    """
+    inds = np.where(
+        (embedding[:, 0] > xmin)
+        & (embedding[:, 0] < xmax)
+        & (embedding[:, 1] > ymin)
+        & (embedding[:, 1] < ymax)
+    )[0]
+
+    return df.iloc[inds]
+
+
+## ========================================================================= ##
+
+
+def save_mock_dataset(save_fname, data):
+    # I should really make this uniform
+    np.savez(
+        save_fname,
+        dispersion=data[0],
+        flux_orig=data[1],
+        flux_autofit=np.zeros_like(data[1]),
+        flux=data[1],
+        ivar=np.zeros_like(data[1]),
+        gpm=data[2],
+        coverage_mask=np.zeros_like(data[1]),
+        flux_orig_deredden=data[1],
+        flux_autofit_deredden=data[1],
+        flux_deredden=data[1],
+        ivar_deredden=np.zeros_like(data[1]),
+    )
+
+
+## ========================================================================= ##
+
+
+def make_masked_composite(
+    training_set_dir,
+    dispersion,
+    redshift_range=None,
+):
+    # original spec range
+    dispersion_range = [3650, 9800]  # AA
+
+    # make a median spectrum
+    median_flux = res.load_median_spec(training_set_dir)
+
+    # make the mask
+    masks, z_is = [], []
+
+    for z in np.linspace(*redshift_range, 5000):
+        mask = np.zeros_like(dispersion)
+
+        blue_w = dispersion_range[0] / (1 + z)
+        red_w = dispersion_range[1] / (1 + z)
+
+        mask[bisect_left(dispersion, blue_w) : bisect_left(dispersion, red_w)] = 1.0
+        masks.append(np.array(mask, dtype=bool))
+        z_is.append(z)
+
+    # only take the masks where we have at least 500 valid flux values
+    masks = np.array(masks)  # [0 : len(masks) - 500, :]
+
+    # tile the composite and mask it
+    masked_flux = median_flux[None, :] * masks
+
+    # tile the dispersion an return everything in a compact dataset
+    tiled_dispersion = np.repeat(dispersion[None, :], masks.shape[0], axis=0)
+
+    return np.array([tiled_dispersion, masked_flux, masks]), np.array(z_is)
+
+
+## ========================================================================= ##
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        help="Make output more verbose",
+        action="store_true",
+    )
+
+    parser.add_argument("-p", "--json_params_path", help="Path to the parameter file")
+
+    return parser.parse_args()
+
+
+## ========================================================================= ##
+
+
+def play_UMAP_embed(
+    z_scaled,
+    c=None,
+    clip=None,
+    scaler=None,
+    p=None,
+    show=True,
+    scatter_kwargs={"s": 20.0, "alpha": 0.5, "cmap": "viridis"},
+    **kwargs,
+):
+    if "c" not in scatter_kwargs:
+        scatter_kwargs["c"] = c
+
+    if scaler is not None:
+        z_scaled = scaler.fit_transform(z_scaled)
+
+    if clip is not None:
+        try:
+            clip[0]
+        except TypeError:
+            clip = [-clip, clip]
+        z_scaled = np.clip(z_scaled, clip[0], clip[1])
+
+    rng = np.random.default_rng()
+
+    reducer = umap.UMAP(**kwargs)
+    logger.info("Fitting UMAP Transformation.")
+
+    if p is not None:
+        logger.info(f"Fitting on {p * 100}% of the data")
+        inds = rng.choice(z_scaled.shape[0], int(z_scaled.shape[0] * p), replace=False)
+        reducer.fit(z_scaled[inds, :])
+        embedding = reducer.transform(z_scaled)
+    else:
+        logger.info("Fitting on the full dataset")
+        embedding = reducer.fit_transform(z_scaled)
+
+    # umap.plot.points(reducer)
+
+    # logger.info("Plotting UMAP embedding.")
+    fig, ax = plt.subplots(1, 1, figsize=(6, 6), layout="constrained")
+    ax.scatter(embedding[:, 0], embedding[:, 1], **scatter_kwargs)
+    ax.set_xlabel("UMAP embed dim. #0")
+    ax.set_ylabel("UMAP embed dim. #1")
+    if show:
+        plt.show()
+    else:
+        plt.close()
+
+    return z_scaled, embedding, reducer, scaler
+
+
+## ========================================================================= ##
+## ========================================================================= ##
+## ========================================================================= ##
+
+if __name__ == "__main__":
+    # assumes standard file structure, i.e. with the parameter file in the same directory
+    #  as the trained model
+    # Remake logger for main
+    logger = logging.getLogger("quest_qso.scripts.latent_space")
+    logger.setLevel(logging.DEBUG)
+
+    parameters = MLConfig().from_json(
+        path=Path.home() / "VAE_QA" / "best" / "GP" / "InfoSpecVAE" / "params.json"
+    )
+
+    json_par_dir = parameters.json_full_path.parent
+    logger.info(f"Loading parameters from {json_par_dir}")
+
+    # device to train on - use `force` to manually specify a device
+    device = utilities.set_device(force=None)
+
+    # Parent folder where the dataset is stored, and where we save things
+    training_set_dir = root_dir = local_path / parameters.input_dataset_parent_dir
+
+    # load the dataset and split in train and test
+    dataset, dispersion, scaling_factor = sd.load_dataset(
+        training_set_dir,
+        parameters.input_dataset_name,
+        subsample=1,
+        replace_nan=True,
+        replace_val=0,
+        device=device,
+        scale_spectra=parameters.scale_spectra,
+        scale_method=parameters.scale_method,
+        scale_by=parameters.scale_by,
+        # scale_spectra -> False
+        # scale_method  -> None
+        #  If we need to make this explicit.
+        # Here I do to make sure things are NOT being scaled!
+    )
+
+    trained_model, _, _, _, _ = ld.load_model(
+        InfoSpecVAE,
+        root_dir,
+        dispersion,
+        device,
+        parameters=parameters,
+        scaling_factor=scaling_factor,
+        trained_model_dir=json_par_dir,
+        trained_model_fname="InfoSpecVAE.pt",
+    )
+
+    # I stil only use the train data for this part, just for consistency
+    train_set, _ = random_split(dataset, [0.9, 0.1], generator=TGEN)
+
+    # Batch size is not important here and I want to NOT shuffle the data
+    train_dataloader = DataLoader(train_set, batch_size=128, shuffle=False)
+
+    # MetaData to see if I can figure out any trend in redshift or something
+    # Split using the same random inds as before
+    # Given I am using the Wu 22 catalogue, I just keep track of the names to preserve the order
+    sdss_names = pd.read_hdf(
+        local_path
+        / parameters.input_dataset_parent_dir
+        / parameters.input_dataset_name.replace(".npz", "_cleaned.hdf5"),
+    ).iloc[train_set.indices]
+    sdss_names["SDSS_NAME"] = sdss_names["SDSS_NAME"].str.decode("utf-8")
+
+    logger.info("Loading Wu+22 catalogue.")
+    # from here: https://iopscience.iop.org/article/10.3847/1538-4365/ac9ead
+    wu22_catalogue = utilities.table_to_pandas(
+        Table.read("/Users/francesco/data/Niklas/SDSS_DR16Q_MergedWu_2022.fits")
+    )
+
+    wu22_catalogue["SDSS_NAME"] = wu22_catalogue["SDSS_NAME"].str.decode("utf-8")
+    metadata = sdss_names.merge(wu22_catalogue, on="SDSS_NAME")
+
+    # Compute coordinates in galactic
+    coord = SkyCoord(
+        metadata["RA_DR16Q"].to_numpy() * units.deg,
+        metadata["DEC_DR16Q"].to_numpy() * units.deg,
+        frame="icrs",
+    ).galactic
+    metadata["l_gal"] = coord.galactic.l.value
+    metadata["b_gal"] = coord.galactic.b.value
+
+    # produce latent space from spectra
+    # I only want the reparametrisation
+    z = trained_model.latent_space_posterior(train_dataloader)["z"]
+
+    logger.info("Fitting UMAP Transformation.")
+    z_scaled, embedding, reducer, fitted_scaler = play_UMAP_embed(
+        z,
+        metric="euclidean",
+        n_neighbors=10,
+        min_dist=0.2,
+        scaler=RobustScaler(),
+        p=0.01,
+    )
+    umap_latent_colors(embedding, z, clip=3)
+
+    norm_relevant_columns = {
+        "Z_x": None,
+        "Z_SYS": None,
+        "EBV": Normalize(0.0, 0.175),
+        # "CONTI_FIT": None,
+        "FEII_UV_EW": Normalize(10.0, 100.0),
+        "FEII_OPT_EW": Normalize(0.0, 150.0),
+        # "LOGL1350": Normalize(45.75, 47.125),
+        # "LOGL1700": Normalize(45.50, 47.00),
+        "LOGL3000": Normalize(44.50, 47.00),
+        "LOGLBOL": Normalize(45.25, 47.75),
+        # "LOGMBH_MGII": Normalize(8.0, 10.0),
+        # "LOGMBH_CIV": Normalize(8.25, 10.0),
+        "LOGMBH": Normalize(7.5, 10.25),
+        "LOGLEDD_RATIO": Normalize(-2.00, 0.50),
+        "BAL_PROB_x": None,
+        "BI_CIV_x": None,
+        "M_I_x": Normalize(-29.50, -23.0),
+        "SN_MEDIAN_ALL_DR16Q": Normalize(15, 45),
+        "PSFMAG": Normalize(17.00, 20.50),  # G mag
+        "CONTI_FIT": None,  # power law slope, second element in the array
+        "l_gal": None,
+        "b_gal": None,
+    }
+
+    inds_relevant_column = {"PSFMAG": 1, "CONTI_FIT": 1}
+
+    for key, current_norm in norm_relevant_columns.items():
+        flag = 0
+        if key in ["BAL_PROB", "BI_CIV"]:
+            flag = None
+
+        color = metadata[key].to_numpy()
+        if key in inds_relevant_column.keys():
+            color = np.vstack(metadata[key])[:, inds_relevant_column[key]]
+
+        plot_umap_representation(
+            embedding,
+            color,
+            key,
+            cmap="RdBu",
+            norm=current_norm,
+            flag=flag,
+            save=json_par_dir / "figures" / "UMAP_output",
+            show=False,
+        )
+
+    plt.close("all")
+
+    ## ------------------------------------------------------------------------- ##
+
+    norm_line_defaults = {
+        "HBETA": [Normalize(41.00, 44.50), Normalize(0, 250)],
+        "OIII5007": [Normalize(40.25, 45.00), Normalize(0, 70)],
+        "OIII5007C": [Normalize(40.25, 43.75), Normalize(0, 50)],
+        "MGII": [Normalize(42.50, 45.75), Normalize(0, 70)],
+        "MGII_BR": [Normalize(42.50, 45.25), Normalize(0, 70)],
+        "CIII_ALL": [Normalize(42.25, 45.00), Normalize(0, 60)],
+        "CIII_BR": [Normalize(42.25, 45.00), Normalize(0, 50)],
+        "CIV": [Normalize(43.00, 45.50), Normalize(0, 90)],
+        "NEV3426": [Normalize(40.50, 44.75), Normalize(0, 15)],
+        "CAII3934": [Normalize(40.00, 43.50), Normalize(0, 5.0)],
+        "OII3728": [Normalize(40.50, 43.75), Normalize(0, 10)],
+        # "HEII4687":    [Normalize(40.00, 43.75), Normalize(0, 40)],
+        # "HEII1640":    [Normalize(42.00, 44.75), Normalize(0, 20)],
+        # "HEII1640_BR": [Normalize(42.00, 44.50), Normalize(0, 20)],
+        # "SIIV_OIV":    [Normalize(43.20, 45.00), Normalize(0, 25)],
+        # "OI1304":      [Normalize(42.50, 45.00), Normalize(0, 15)],
+        # "LYA":         [Normalize(44.00, 46.50), Normalize(0, 250)],
+        # "NV1240":      [Normalize(42.75, 45.50), Normalize(0, 40)],
+    }
+
+    for key, current_norm in norm_line_defaults.items():
+        plot_line_properties(
+            embedding,
+            key,
+            metadata,
+            flags=[0.0, 0.0],
+            norms=current_norm,
+            cmaps=["RdBu", "RdBu"],
+            save=json_par_dir / "figures" / "UMAP_output",
+            show=False,
+        )
+
+    plt.close("all")
+
+    ## ------------------------------------------------------------------------- ##
+
+    # see if the redshift comes from the coverage mask
+
+    mocks_fname = local_path / "Mock_redshift_coverage.npz"
+    mock_dataset, mock_redshift = make_masked_composite(
+        training_set_dir,
+        dataset.dispersion,
+        redshift_range=[0.75, 2.75],
+    )
+    save_mock_dataset(mocks_fname, mock_dataset)
+
+    # redo the above, with the mocks
+    dataset_mocks = sd.SpecDataset(
+        mocks_fname,
+        subsample=1,
+        replace_nan=True,
+        replace_val=0,
+    )
+
+    dataloader_mocks = DataLoader(
+        dataset_mocks,
+        batch_size=128,
+        shuffle=False,
+    )
+
+    z_mocks = trained_model.latent_space_posterior(dataloader_mocks)["z"]
+
+    # apply the same transformations as before
+    if scale_input:
+        z_mocks_scaled = fitted_scaler.transform(z_mocks)
+    else:
+        z_mocks_scaled = z_mocks
+
+    embedding_mocks = reducer.transform(z_mocks_scaled)
+
+    # Han says hi
+    plot_umap_representation(
+        embedding_mocks,
+        mock_redshift,
+        "Z_MOCK",
+        cmap="RdBu",
+        norm=None,
+        flag=0,
+        save=json_par_dir / "figures" / "UMAP_output",
+        show=True,
+    )
+
+    plt.close()
+
+    ## ===================================================================== ##
+
+    # Skip GMM-MI for the time being, take a bit too long
+    #  and I would like to play around with UMAP
+
+    ## ===================================================================== ##
+
+    # Temporary silencing of deprecation warnings
+    pylogger = logging.getLogger("py.warnings")
+    pylogger.setLevel(logging.ERROR)
+
+    from gmm_mi.mi import EstimateMI
+    from gmm_mi.param_holders import (
+        GMMFitParamHolder,
+        MIDistParamHolder,
+        SelectComponentsParamHolder,
+    )
+    from gmm_mi.utils.plotting import annotate_heatmap, create_heatmap
+
+    category_list = (
+        ["Z_PIPE_x"]
+        + list(norm_relevant_columns.keys())
+        + list(norm_line_defaults.keys())
+    )
+    for _col in [
+        "Z_x",
+        "Z_SYS",
+        "EBV",
+        "FEII_UV_EW",
+        "FEII_OPT_EW",
+        "LOGL3000",
+        "LOGLBOL",
+        "LOGMBH",
+        "LOGLEDD_RATIO",
+        "BAL_PROB_x",
+        "BI_CIV_x",
+        "M_I_x",
+        "SN_MEDIAN_ALL_DR16Q",
+        "PSFMAG",
+        "CONTI_FIT",
+        "l_gal",
+        "b_gal",
+        "HBETA",
+        "OIII5007",
+        "OIII5007C",
+        "MGII",
+        "MGII_BR",
+        "CIII_ALL",
+        "CIII_BR",
+        "CIV",
+        "NEV3426",
+        "CAII3934",
+        "OII3728",
+    ]:
+        # Change back to this after computing the MI for Z_PIPE
+        # [
+        #     "Z_SYS",
+        #     "Z_x",
+        #     "BAL_PROB_x",
+        #     "BI_CIV_x",
+        # ]:
+        logger.debug(f"Removing {_col}")
+        category_list.remove(_col)
+
+    qso_properties_wu_shen = metadata[category_list].reset_index(drop=True)
+
+    # parse the columns
+    # qso_properties_wu_shen["CONTI_FIT"] = np.vstack(
+    #     qso_properties_wu_shen["CONTI_FIT"]
+    # )[:, 1]
+    # qso_properties_wu_shen["PSFMAG"] = np.vstack(qso_properties_wu_shen["PSFMAG"])[:, 1]
+
+    # # For lines we use col 3, 4 and 5 (Line luminosity, FWHM and EW)
+    # for line in norm_line_defaults.keys():
+    #     for n, suffix in enumerate(["LineLum", "FWHM", "EW"]):
+    #         qso_properties_wu_shen[line + "_" + suffix] = np.vstack(metadata[line])[
+    #             :, n
+    #         ]
+
+    # qso_properties_wu_shen = qso_properties_wu_shen.drop(
+    #     norm_line_defaults.keys(), axis=1
+    # ).reset_index(drop=True)
+    category_list = list(qso_properties_wu_shen.columns)
+
+    qso_properties_wu_shen = qso_properties_wu_shen.to_numpy()
+
+    # Latent dimension, not much to do here
+    n_latents = z.shape[1]
+
+    # all unspecified parameters are set to their default values
+
+    # parameters for every GMM fit that is being run
+    gmm_fit_params = GMMFitParamHolder(threshold_fit=1e-5, reg_covar=1e-12)
+
+    # parameters to choose the number of components
+    select_components_params = SelectComponentsParamHolder(n_inits=5, n_folds=3)
+
+    # parameters for MI distribution estimation
+    mi_dist_params = MIDistParamHolder(n_bootstrap=100, MC_samples=1e5)
+
+    # folder names and general setup
+    timestamp = utilities.get_timestamp()
+    gmm_res_dir = json_par_dir / ("GMM-MI" + timestamp)
+    gmm_fig_dir = gmm_res_dir / "figures"
+    gmm_res_dir.mkdir(parents=True, exist_ok=True)
+    gmm_fig_dir.mkdir(parents=True, exist_ok=True)
+    gmm_res_fname = gmm_res_dir / "GMM-MI_out.npy"
+
+    overwrite, N_MAX = True, 2500
+    print("Categories considered:", category_list)
+
+    # TODO: Fix this so that it does not overwrite things
+    if gmm_res_fname.exists() and not overwrite:
+        logger.info(f"File already exists. Loading it from {gmm_res_fname}")
+        all_MI_estimates = np.load(gmm_res_fname)
+    else:
+        logger.info(f"Estimating MI, and saving results to {gmm_res_fname}")
+        all_MI_estimates = np.zeros((len(category_list), n_latents, 2))
+
+        for category_id, category in enumerate(category_list):
+            for latent_id in range(n_latents):
+                logger.info(
+                    f"Estimating MI for {category} and latent {latent_id} ({category_id}/{len(category_list)})"
+                )
+                # get current continuous feature (a latent)
+                current_latent_dim = z[:, latent_id]
+                # get current category
+                current_qso_pro = qso_properties_wu_shen[:, category_id]
+
+                # Shuffle the QSO property to break any potential correlation
+                # This serves as a control - MI should be close to zero if properly shuffled
+                # rng = np.random.default_rng(42)  # Use fixed seed for reproducibility
+                # shuffled_indices = np.arange(len(current_qso_pro))
+                # rng.shuffle(shuffled_indices)
+                # current_qso_pro_shuffled = current_qso_pro[shuffled_indices]
+
+                X = np.stack((current_latent_dim, current_qso_pro), axis=0).T
+                X = X[~np.isnan(X).any(axis=1)]
+
+                if any(current_qso_pro == 0):
+                    logger.warning(
+                        f"Category {category} contains {sum(current_qso_pro == 0)} zero values, excluding zeros from the MI computation."
+                    )
+                    X = X[current_qso_pro != 0]
+
+                # choose a random sample of 2500 points to make it quick while I play around
+                if X.shape[0] > N_MAX:
+                    rng = np.random.default_rng()
+                    inds = rng.choice(X.shape[0], N_MAX, replace=False)
+                    X = X[inds, :]
+
+                mi_estimator = EstimateMI(
+                    gmm_fit_params=gmm_fit_params,
+                    select_components_params=select_components_params,
+                )
+
+                MI_mean, MI_std = mi_estimator.fit_estimate(
+                    X=X,
+                    mi_dist_params=mi_dist_params,
+                    verbose=True,
+                )
+
+                all_MI_estimates[category_id, latent_id, 0] = MI_mean
+                all_MI_estimates[category_id, latent_id, 1] = MI_std
+
+    np.save(gmm_res_fname, all_MI_estimates)
+
+    # plot GMM-MI results
+    y_labels = [label.capitalize().replace("_", " ") for label in category_list]
+    x_labels = [f"$z_{i}$" for i in range(1, n_latents + 1)]
+    # [f"$z_{i+$" for i in range(6)]
+    # we only look at the mean MI values for this plot, so we ignore the MI uncertainty
+    MI_values = all_MI_estimates[:, :, 0]
+
+    np.save(gmm_res_fname.with_name("GMM-MI_out_xlabels.npy"), x_labels)
+    np.save(gmm_res_fname.with_name("GMM-MI_out_ylabels.npy"), y_labels)
+
+    fig, ax = plt.subplots(1, 1, figsize=(100, 100 / 1.61), layout="constrained")
+    im, cbar = create_heatmap(
+        MI_values,
+        y_labels,
+        x_labels,
+        cmap="OrRd",
+        cbarlabel="MI [nat]",
+        alpha=0.6,
+        fsize=23,
+        ax=ax,
+        vmin=0,
+        vmax=0.6,
+    )
+
+    annotate_heatmap(
+        im,
+        valfmt="{x:.2f}",
+        save_fig=True,
+        save_path=gmm_fig_dir / "MI.pdf",
+        fontsize=23,
+    )

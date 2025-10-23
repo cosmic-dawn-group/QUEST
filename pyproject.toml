@@ -1,5 +1,5 @@
 [project]
-name = "QUEST"
+name = "quest_qso"
 version = "1.0"
 description = "A machine learning model to generate quasar spectra"
 keywords = [
@@ -73,7 +73,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.sdist]
 exclude = [
-  "src/QUEST/data/*",
+  "src/quest_qso/data/*",
 ]
 
 [tool.uv.sources]
