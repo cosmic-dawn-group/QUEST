@@ -1,0 +1,80 @@
+[project]
+name = "QUEST"
+version = "1.0"
+description = "A machine learning model to generate quasar spectra"
+keywords = [
+    "spectroscopy",
+    "astronomy",
+    "science",
+    "python",
+    "quasar"
+]
+
+
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "astropy>=6.1.6",
+    "csaps>=1.2.0",
+    "dustmaps>=1.0.13",
+    "h5py>=3.12.1",
+    "matplotlib>=3.9.2",
+    "jupyterlab>=4.3.0",
+    "numba-extinction>=0.1.2",
+    "numba>=0.60.0",
+    "numpy>=2.0.2",
+    "pandas>=2.2.3",
+    "scikit-learn>=1.5.2",
+    "scipy>=1.14.1",
+    "speclite>=0.20",
+    "spectres>=2.2.2",
+    "tables>=3.10.1",
+    "torch>=2.5.1",
+    "torchvision>=0.20.1",
+    "tqdm>=4.67.0",
+    "umap-learn>=0.5.7",
+    "corner>=2.2.3",
+    "cuda-selector>=0.1.5",
+    "gmm-mi>=0.8.2",
+    "atelier>=0.1",
+    "gdown>=5.2.0",
+    "emcee>=3.1.6",
+]
+
+
+authors = [
+    { name = "Francesco Guarneri", email = "francesco.guarneri@uni-hamburg.de" },
+    { name = "Jan-Torge Schindler", email = "jan-torge.schindler@uni-hamburg.de"}
+]
+
+
+readme = {file = "ReadMe.md", content-type = "text/markdown"}
+license = {file = "LICENSE"}
+
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+
+[project.urls]
+Homepage = "https://github.com/cosmic-dawn-group/QUEST"
+"Bug Tracker" = "https://github.com/cosmic-dawn-group/QUEST/issues"
+
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "src/QUEST/data/*",
+]
+
+[tool.uv.sources]
+atelier = { git = "https://github.com/jtschindler/atelier.git" }
