@@ -1,6 +1,6 @@
 # QUEST: A machine learning framework to generate quasar spectra
 
-QUEST is an implementation of a Variational Auto-Encoder (VAE) with the primary purpose of generating realistic quasar spectra and post-processing them to obtain synthetic quasar photometry. QUEST can also be used to reconstruct spectra with limited wavelength coverage, absorption systems, and even the continuum blueward of the Lyman-$\alpha$ emission line (with some caveats).
+QUEST (Quasar Unsupervised Encoder and Synthesis Tool) is an implementation of a Variational Auto-Encoder (VAE) with the primary purpose of generating realistic quasar spectra and post-processing them to obtain synthetic quasar photometry. QUEST can also be used to reconstruct spectra with limited wavelength coverage, absorption systems, and even the continuum blueward of the Lyman-$\alpha$ emission line (with some caveats).
 
 Check out the [paper]() for a full breakdown of its capabilities and limitations.
 
@@ -23,7 +23,7 @@ We recommend installing QUEST in a dedicated virtual environment.
 
 3.  or **Install from PyPI:**
     ```bash
-    pip install QUEST
+    pip install quest_qso
     ```
     *Note: Updates on the PyPI version might lag slightly behind the main repository.*
 

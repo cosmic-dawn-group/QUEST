@@ -222,10 +222,17 @@ def load_dataset(path, dset_fname, **kwargs):
     """
     filepath = path / dset_fname
     if not filepath.exists():
-        logger.info(f"Dataset file {filepath} not found locally.")
-        logger.info("Attempting to download dataset from remote resource.")
-
-        resources.download_dataasets_from_drive()
+        logger.error(f"Dataset file {filepath} not found locally.")
+        logger.error(
+            "Please download the datasets, the models and "
+            "the error functions using the appropriate routines."
+        )
+        logger.error(
+            "For example, to download the datasets, use "
+            "from quest_qso.utils import resources"
+            "resources.download_datasets_from_drive()"
+        )
+        raise FileNotFoundError(f"Dataset file {filepath} not found.")
 
     logger.info("Loading dataset.")
     out = SpecDataset(filepath, **kwargs)

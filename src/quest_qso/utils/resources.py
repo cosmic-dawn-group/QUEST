@@ -22,7 +22,6 @@ PRE_TRAINED_MODELS_PATH = RESOURCE_PATH / "data" / "models"
 
 logger = logging.getLogger(__name__)
 
-
 # =========================================================================== #
 
 
@@ -201,7 +200,7 @@ def load_vdb_template(fname="vandenberk_template.csv", parent_dir=None):
 # =========================================================================== #
 
 
-def download_dataasets_from_drive(cleanup_zip=False):
+def download_datasets_from_drive():
     md5 = "md5:496e922df03a0d4072424b166987a07c"
     output_fname = local_path / "datasets.zip"
 
@@ -212,6 +211,45 @@ def download_dataasets_from_drive(cleanup_zip=False):
         postprocess=gdown.extractall,
     )
 
-    # clean up original zip file if requested
-    if cleanup_zip:
-        output_fname.unlink(missing_ok=True)
+
+# =========================================================================== #
+
+
+def download_models_from_drive():
+    # GP
+    gdown.cached_download(
+        "https://drive.google.com/uc?id=1u-s7oASkP5naYJpLFjyfpndQ_BBEqdvP",
+        str(PRE_TRAINED_MODELS_PATH / "GP" / "InfoSpecVAE" / "GP_model_params.zip"),
+        hash="md5:f9f6e6a8084ba9f0fb377354f45187e5",
+        postprocess=gdown.extractall,
+    )
+
+    # FOR
+    gdown.cached_download(
+        "https://drive.google.com/uc?id=1FJDjJbxN3TRZTUGrmgJKasBrkaReuV5L",
+        str(PRE_TRAINED_MODELS_PATH / "FOR" / "InfoSpecVAE" / "FOR_model_params.zip"),
+        hash="md5:38ae7d0cd13ab92df3547cf2b29a3805",
+        postprocess=gdown.extractall,
+    )
+
+    # FOB
+    gdown.cached_download(
+        "https://drive.google.com/uc?id=1ct4egEKCGbP1EB-2skbTlMoSCMWThibB",
+        str(PRE_TRAINED_MODELS_PATH / "FOB" / "InfoSpecVAE" / "FOB_model_params.zip"),
+        hash="md5:eb4ea9a5f7cf4a1c568645f2f001bfcb",
+        postprocess=gdown.extractall,
+    )
+
+    logger.info("Pre-trained models downloaded successfully.")
+
+
+# =========================================================================== #
+
+
+def download_error_functions_from_drive():
+    gdown.cached_download(
+        "https://drive.google.com/uc?id=1Fv7mEUerVK1u9EiRmOdfESGACtrRz2s3",
+        str(RESOURCE_PATH / "data" / "error_functions.zip"),
+        hash="md5:991dd3745665427a9d51af0f058d4a26",
+        postprocess=gdown.extractall,
+    )
