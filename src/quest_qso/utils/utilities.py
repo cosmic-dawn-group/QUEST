@@ -249,11 +249,15 @@ def download_lusso(outpath=local_path, force_download=False):
     outpath = outpath / "Lusso15_table1.dat"
 
     def download_file(path=outpath):
-        url = "https://cdsarc.cds.unistra.fr/viz-bin/nph-Cat/txt?J/MNRAS/449/4204/table1.dat"
+        url = "https://cdsarc.cds.unistra.fr/ftp/J/MNRAS/449/4204/table1.dat"
         req = requests.get(url)
         if req.status_code == 200:
             with open(path, "w") as f:
-                f.write(req.content.decode(req.encoding))
+                if req.encoding is None:
+                    f.write(req.content)
+                else:
+                    # assumes this is already readable as text
+                    f.write(req.content.decode(req.encoding))
         else:
             raise ValueError(
                 "Could not download the Lusso+15 table. "
