@@ -6,7 +6,7 @@ Check out the [paper](https://arxiv.org/abs/2510.23206) for a full breakdown of 
 
 ## Install instructions
 
-We recommend installing QUEST in a dedicated virtual environment.
+We recommend installing QUEST in a dedicated virtual environment. We currently leverage [Atelier](https://github.com/jtschindler/atelier) to sample from a luminosity function. Unfortunately, due to the design of PyPI, we currently cannot include [Atelier](https://github.com/jtschindler/atelier) as a requirement. It is thus necessary to install it manually:
 
 1.  **Create and activate a virtual environment** (e.g., using `venv`):
     ```bash
@@ -14,7 +14,15 @@ We recommend installing QUEST in a dedicated virtual environment.
     source venv_name/bin/activate  # Linux/macOS
     ```
 
-2.  **Install from source:**
+2.  **Install Atelier:**
+    ```bash
+    git clone https://github.com/jtschindler/atelier
+    cd Atelier
+    pip install emcee
+    pip install -e .
+    ```
+
+3.  **Install QUEST from source:**
     ```bash
     git clone https://github.com/cosmic-dawn-group/QUEST.git
     cd QUEST
@@ -27,7 +35,7 @@ We recommend installing QUEST in a dedicated virtual environment.
     ```
     *Note: Updates on the PyPI version might lag slightly behind the main repository.*
 
-    **A note of caution:** QUEST has been tested as much as possible, but there are surely bugs and aspects to improve. Please report any issue you find using the **GitHub Issues** tab, or consider sending us an email ([francesco.guarneri@uni-hamburg.de](mailto:francesco.guarneri@uni-hamburg.de)).
+    **A note of caution:** QUEST has been tested as much as possible, but, especially at the beginning, there will be bugs and aspects to improve. Please report any issue you find using the **GitHub Issues** tab, or consider sending us an email ([francesco.guarneri@uni-hamburg.de](mailto:francesco.guarneri@uni-hamburg.de)).
 
 ## Environment variables
 
@@ -47,7 +55,7 @@ export QUEST_LOCALPATH="/path/to/your/cache/folder"
 
 Usage
 -----
-Head over to the `examples` folder, where we've included Jupyter notebooks showing how to load the model for inference, sample from it, or generate synthetic photometry.
+Head over to the [examples](https://github.com/cosmic-dawn-group/QUEST/tree/main/src/quest_qso/examples) folder, where we've included Jupyter notebooks showing how to load the model for inference, sample from it, or generate synthetic photometry. If you install the package via `pip`, the example folder will be located in the `site-package` of your environment. Reaching this folder is generally cumbersome, and making changes to any file of folder might cascade in a broken Python environment. In this case, we thus recommend downloading the Notebooks from GitHub, place them in a folder of choice, and run them from there.
 
 Contributing
 ------------
