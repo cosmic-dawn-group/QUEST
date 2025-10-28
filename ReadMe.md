@@ -2,7 +2,7 @@
 
 QUEST (Quasar Unsupervised Encoder and Synthesis Tool) is an implementation of a Variational Auto-Encoder (VAE) with the primary purpose of generating realistic quasar spectra and post-processing them to obtain synthetic quasar photometry. QUEST can also be used to reconstruct spectra with limited wavelength coverage, absorption systems, and even the continuum blueward of the Lyman-$\alpha$ emission line (with some caveats).
 
-Check out the [paper]() for a full breakdown of its capabilities and limitations.
+Check out the [paper](https://arxiv.org/abs/2510.23206) for a full breakdown of its capabilities and limitations.
 
 ## Install instructions
 
@@ -16,7 +16,7 @@ We recommend installing QUEST in a dedicated virtual environment.
 
 2.  **Install from source:**
     ```bash
-    git clone [https://github.com/cosmic-dawn-group/QUEST.git](https://github.com/cosmic-dawn-group/QUEST.git)
+    git clone https://github.com/cosmic-dawn-group/QUEST.git
     cd QUEST
     pip install -e .
     ```
