@@ -840,7 +840,10 @@ def flux_to_AB(flux, flag=None):
 
 @units.quantity_input
 def sample_error(
-    flux: units.Jansky, error_function: units.Jansky, name, rng=default_rng
+    flux: units.Jansky,
+    error_function: units.Jansky,
+    name,
+    rng=default_rng,
 ) -> units.Jansky:
     if not (flux.unit.is_equivalent, error_function.unit):
         logger.warning(
@@ -871,7 +874,9 @@ def sample_error(
         logger.warning(
             f"{np.sum(sigma <= 0)}/{len(sigma)} sampled errors are negative, setting them to 0."
         )
-        sigma[sigma <= 0] = -sigma[sigma <= 0]
+        raise ValueError(
+            "Negative errors - This should never happen! Please open an issue."
+        )
 
     # sampled errors cannot and should not be negative!
     return np.abs(rng.normal(loc=mu, scale=sigma)) * flux.unit

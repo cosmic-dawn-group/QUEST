@@ -1,6 +1,6 @@
 [project]
 name = "quest_qso"
-version = "1.0"
+version = "1.0.1.1"
 description = "A machine learning model to generate quasar spectra"
 keywords = [
     "spectroscopy",
@@ -35,9 +35,7 @@ dependencies = [
     "corner>=2.2.3",
     "cuda-selector>=0.1.5",
     "gmm-mi>=0.8.2",
-    "atelier>=0.1",
     "gdown>=5.2.0",
-    "emcee>=3.1.6",
 ]
 
 
@@ -75,6 +73,3 @@ build-backend = "hatchling.build"
 exclude = [
   "src/quest_qso/data/*",
 ]
-
-[tool.uv.sources]
-atelier = { git = "https://github.com/jtschindler/atelier.git" }

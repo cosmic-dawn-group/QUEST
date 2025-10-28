@@ -7,6 +7,7 @@ import os
 import sys
 from contextlib import contextmanager
 from datetime import datetime as dt
+from functools import lru_cache
 from pathlib import Path
 
 import torch
@@ -129,6 +130,12 @@ def all_logging_disabled(highest_level=logging.CRITICAL):
         logging.disable(previous_level)
 
 
+# Keep track of 10 different messages and then warn again
+@lru_cache(None)
+def warn_once(logger: logging.Logger, msg: str):
+    logger.warning(msg)
+
+
 # =========================================================================== #
 # Finally, uncomment this to deal with Astropy using Warning
 
@@ -164,7 +171,9 @@ if log_to_file in [True, "True", "true", "1"]:
 
     logger.info(f"Logging to file {log_fname}.")
     if log_fname.exists():
-        log_bak_timestamp = dt.fromtimestamp(log_fname.stat().st_mtime).strftime('%Y-%m-%dT%H-%M-%S')
+        log_bak_timestamp = dt.fromtimestamp(log_fname.stat().st_mtime).strftime(
+            "%Y-%m-%dT%H-%M-%S"
+        )
         log_fname.rename(log_fld / f"quest_qso_{log_bak_timestamp}.log.bak")
 
     f_handler = logging.FileHandler(log_fname)

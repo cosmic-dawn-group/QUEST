@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 
 def setup_dust_maps(path):
-    print(path)
     if not (Path.home() / ".dustmapsrc").exists():
         print("\n =========================== \n")
         logger.info("Running automatic configuration!")
