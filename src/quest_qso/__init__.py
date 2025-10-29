@@ -185,7 +185,7 @@ if log_to_file in [True, "True", "true", "1"]:
 # ====================== Be nice to other users as well ===================== #
 # =========================================================================== #
 
-if os.getenv("AM_I_ON_SHARED_SERVER", False) in [True, "True", "true", "1"]:
+if os.getenv("QUESTO_AM_I_ON_SHARED_SERVER", False) in [True, "True", "true", "1"]:
     max_n_cpu = min(len(os.sched_getaffinity(0)) // 3, DEFAULT_MAX_N_CPU)
     torch.set_num_threads(max_n_cpu)
     logger.warning(
@@ -226,8 +226,8 @@ logger.info(f"Using device: {DEVICE}.")
 # =========================================================================== #
 
 # https://pytorch.org/docs/stable/notes/randomness.html
-if os.getenv("TORCH_SEED", None):
-    seed = int(os.environ.get("TORCH_SEED"))
+if os.getenv("QUEST_TORCH_SEED", None):
+    seed = int(os.environ.get("QUEST_TORCH_SEED"))
     if seed > 0:
         logger.warning(f"Setting torch seed to {seed} for reproducibility.")
         torch.manual_seed(seed)
@@ -243,7 +243,7 @@ else:
 # =========================================================================== #
 
 # Debug
-if os.getenv("TORCH_DEBUG", False):
+if os.getenv("QUEST_TORCH_DEBUG", False):
     logger.warning(
         "Setting torch.autograd.set_detect_anomaly(True). "
         "This will greatly slow down the code, enable this only if needed!."

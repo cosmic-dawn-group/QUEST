@@ -1,6 +1,6 @@
 [project]
 name = "quest_qso"
-version = "1.0.1.1"
+version = "1.0.1.4"
 description = "A machine learning model to generate quasar spectra"
 keywords = [
     "spectroscopy",

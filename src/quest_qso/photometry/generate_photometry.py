@@ -823,7 +823,7 @@ def flux_to_AB(flux, flag=None):
 
     if np.any(flux <= 0) and not flag:
         raise RuntimeError(
-            "Negative flux detected, allow it by setting `flag` to any value."
+            "Negative flux detected, allow it by setting `flag` to any value (excluding zero)."
         )
     elif np.any(flux <= 0) and flag:
         flux_copy[flux_copy <= 0] = np.nan
@@ -842,7 +842,7 @@ def flux_to_AB(flux, flag=None):
 def sample_error(
     flux: units.Jansky,
     error_function: units.Jansky,
-    name,
+    band_name,
     rng=default_rng,
 ) -> units.Jansky:
     if not (flux.unit.is_equivalent, error_function.unit):
@@ -857,29 +857,44 @@ def sample_error(
 
     mu = np.interp(
         flux.value,
-        error_function[name + "_flux_grid"].value,
-        error_function[name + "_mu"].value,
-        left=error_function[name + "_mu"].value[0],
-        right=error_function[name + "_mu"].value[-1],
+        error_function[band_name + "_flux_grid"].value,
+        error_function[band_name + "_mu"].value,
+        left=error_function[band_name + "_mu"].value[0],
+        right=error_function[band_name + "_mu"].value[-1],
     )
     sigma = np.interp(
         flux.value,
-        error_function[name + "_flux_grid"].value,
-        error_function[name + "_sigma"].value,
-        left=error_function[name + "_sigma"].value[0],
-        right=error_function[name + "_sigma"].value[-1],
+        error_function[band_name + "_flux_grid"].value,
+        error_function[band_name + "_sigma"].value,
+        left=error_function[band_name + "_sigma"].value[0],
+        right=error_function[band_name + "_sigma"].value[-1],
     )
 
     if np.any(sigma <= 0):
         logger.warning(
-            f"{np.sum(sigma <= 0)}/{len(sigma)} sampled errors are negative, setting them to 0."
+            f"{np.sum(sigma <= 0)}/{len(sigma)} sampled errors are negative."
         )
         raise ValueError(
             "Negative errors - This should never happen! Please open an issue."
         )
 
     # sampled errors cannot and should not be negative!
-    return np.abs(rng.normal(loc=mu, scale=sigma)) * flux.unit
+    # enforce that by resampling until positive - might be slow!
+    out_sigma = rng.normal(loc=mu, scale=sigma)
+
+    iter_ = 0
+    while (out_sigma <= 0).any():
+        if iter_ % 1000 == 0 and iter_ > 0:
+            logger.warning(
+                f"Still {np.sum(out_sigma <= 0)}/{len(out_sigma)} "
+                f"sigmas below 0 after {iter_} iterations."
+            )
+        out_sigma[out_sigma <= 0] = rng.normal(
+            loc=mu[out_sigma <= 0],
+            scale=sigma[out_sigma <= 0],
+        )
+
+    return out_sigma * flux.unit
 
 
 ## ============================================================================= ##
@@ -887,7 +902,11 @@ def sample_error(
 
 @units.quantity_input
 def perturb_photometry(
-    flux: units.Jansky, sampled_error: units.Jansky, rng=default_rng
+    flux: units.Jansky,
+    sampled_error: units.Jansky,
+    rng=default_rng,
+    error_func=None,
+    band_name=None,
 ) -> units.Jansky:
     # is this the best way to go about this?
     # in principle I could have negative values, those would just be failure
@@ -895,16 +914,54 @@ def perturb_photometry(
     # Note the units! Has to match the error function!
     # Probably only an issue for VIS, maybe Y?
     if not (flux.unit.is_equivalent, sampled_error.unit):
-        print(
-            "[Warning] Flux and error function have to be in the equivalent units! Aborting."
+        raise ValueError(
+            "Flux and error function have to be in the equivalent units! Aborting."
         )
-        return None
 
     # convert the error function to the flux units
     # local variable, no need to convert back
     sampled_error = sampled_error.to(flux.unit)
+    out_flux = rng.normal(loc=flux.value, scale=sampled_error.value) * flux.unit
 
-    return rng.normal(loc=flux.value, scale=sampled_error.value) * flux.unit
+    # out flux can go bananas here, which is not really ideal...
+    # use the error function to clip extrema and keep things under control
+    if (error_func is None and band_name is not None) or (
+        error_func is not None and band_name is None
+    ):
+        raise ValueError(
+            "Both `clip` and `name` have to be provided to clip the perturbed photometry."
+        )
+
+    # the idea is that we are below the minimum "{name}_flux_grid" / 10, then we re-draw another
+    #  example before continuing
+    # Still make sure that things are consistent and do not fail
+    if error_func is not None and band_name is not None:
+        # For now I do not really care about upper limits - if problems arise
+        #  this is the first thing to have a look at
+        min_flux = error_func[band_name + "_flux_grid"][0] / 10.0
+        iter_, cond_ = 0, np.abs(out_flux < min_flux)
+
+        while (cond_).any():
+            if iter_ % 1000 == 0 and iter_ > 0:
+                logger.warning(
+                    f"Still {np.sum(cond_)}/{len(out_flux)} "
+                    f"fluxes below minimum after {iter_} iterations. "
+                    f"Setting this value to min_flux {min_flux}."
+                )
+                out_flux[cond_] = min_flux
+                return out_flux
+
+            out_flux[cond_] = (
+                rng.normal(
+                    loc=flux.value[cond_],
+                    scale=sampled_error.value[cond_],
+                )
+                * flux.unit
+            )
+            iter_ += 1
+            cond_ = np.abs(out_flux < min_flux)
+
+    return out_flux
 
 
 ## ============================================================================= ##
@@ -914,12 +971,26 @@ def perturb_photometry(
 def generate_perturbed_magnitudes(
     flux: units.Jansky,
     error_function: units.Jansky,
-    name,
+    band_name,
     rng=default_rng,
     flag=None,
+    clip_via_error_func=False,
 ):
-    sampled_errors = sample_error(flux, error_function, name, rng=rng).to(units.Jansky)
-    perturbed_flux = perturb_photometry(flux, sampled_errors, rng=rng).to(units.Jansky)
+    sampled_errors = sample_error(
+        flux,
+        error_function,
+        band_name,
+        rng=rng,
+    ).to(units.Jansky)
+
+    perturbed_flux = perturb_photometry(
+        flux,
+        sampled_errors,
+        rng=rng,
+        error_func=error_function if clip_via_error_func else None,
+        band_name=band_name if clip_via_error_func else None,
+    ).to(units.Jansky)
+
     return (
         flux_to_AB(perturbed_flux, flag=flag),
         get_AB_mag_error(perturbed_flux, sampled_errors),

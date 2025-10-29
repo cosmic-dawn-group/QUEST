@@ -254,10 +254,14 @@ def download_lusso(outpath=local_path, force_download=False):
         if req.status_code == 200:
             with open(path, "w") as f:
                 if req.encoding is None:
-                    f.write(req.content)
+                    # we have no defined encoding, just assume the default
+                    file_content = req.content.decode()
                 else:
-                    # assumes this is already readable as text
-                    f.write(req.content.decode(req.encoding))
+                    # if we have an encoding, might as well use it...
+                    file_content = req.content.decode(req.encoding)
+
+                file_content = file_content.replace("|", " ")
+                f.write(file_content)
         else:
             raise ValueError(
                 "Could not download the Lusso+15 table. "
@@ -273,23 +277,13 @@ def download_lusso(outpath=local_path, force_download=False):
             download_file(path=outpath)
             logger.info("File downloaded.")
 
-        out = np.genfromtxt(
-            outpath,
-            delimiter="|",
-            skip_header=5,
-            skip_footer=1,
-        )
+        out = np.genfromtxt(outpath, delimiter=" ")
         logger.info("Using cached version of the file.")
         return out
     except FileNotFoundError:
         logger.info("File not found in cache, downloading it.")
         download_file(path=outpath)
-        return np.genfromtxt(
-            outpath,
-            delimiter="|",
-            skip_header=5,
-            skip_footer=1,
-        )
+        return np.genfromtxt(outpath, delimiter=" ")
 
 
 ## ============================================================================= ##

@@ -2,6 +2,8 @@
 import importlib.resources
 import json
 import logging
+import os
+from pathlib import Path
 
 import gdown
 import numpy as np
@@ -15,13 +17,28 @@ from quest_qso import LOCAL_PATH as local_path
 RESOURCE_PATH = importlib.resources.files("quest_qso")
 PRE_TRAINED_MODELS_PATH = RESOURCE_PATH / "data" / "models"
 
+logger = logging.getLogger(__name__)
+
+
 # =========================================================================== #
 # =============== Download pre-trained models if not available ============== #
 # =========================================================================== #
 
+# if requested, patch gdown cache folder to local path
+#  probably a dirty hack, but cannot think of a better way and a quick google does
+#  seem to lead to much
+if os.getenv("QUEST_PATH_GDOWN_CACHE", None) is not None:
+    logger.info(f"Patching gdown cache folder to {os.getenv('QUEST_PATH_GDOWN_CACHE')}")
+    import sys
 
-logger = logging.getLogger(__name__)
+    patched_cache_folder = Path(os.getenv("QUEST_PATH_GDOWN_CACHE"))
+    patched_cache_folder.mkdir(parents=True, exist_ok=True)
 
+    sys.modules["gdown.cached_download"].cache_root = patched_cache_folder
+
+
+# =========================================================================== #
+# ================== Useful download and loading functions ================== #
 # =========================================================================== #
 
 
@@ -211,6 +228,8 @@ def download_datasets_from_drive():
         postprocess=gdown.extractall,
     )
 
+    logger.info("Training dataset downloaded successfully.")
+
 
 # =========================================================================== #
 
@@ -253,3 +272,5 @@ def download_error_functions_from_drive():
         hash="md5:991dd3745665427a9d51af0f058d4a26",
         postprocess=gdown.extractall,
     )
+
+    logger.info("Error functions downloaded successfully.")
