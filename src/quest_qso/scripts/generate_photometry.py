@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import speclite.filters as filters
 from astropy.cosmology import Planck18 as cosmology
-from atelier import lumfun
+from qsopop import qlf
 
 from quest_qso import mlconfig as cfg
 from quest_qso.photometry import generate_photometry as gp
@@ -125,10 +125,10 @@ def generate_grid_params(dict_):
     #  so commenting out the LF call
     if dict_["SAMPLE_MODE"] == "lf" and dict_["CHOSEN_LF"] is not None:
         lf_sampling_param_dict = {
-            "lf": getattr(lumfun, dict_["CHOSEN_LF"])(),
+            "lf": getattr(qlf, dict_["CHOSEN_LF"])(),
             "cosmology": cosmology,
-            "sky_area": ["LF_SKY_AREA"],
-            "seed": ["SEED"],
+            "sky_area": dict_["LF_SKY_AREA"],
+            "seed": dict_["SEED"],
         }
         lf_sampling_param_dict["lf"].parameters["alpha"].value = -1.5
     else:

@@ -6,7 +6,7 @@ Check out the [paper](https://arxiv.org/abs/2510.23206) for a full breakdown of 
 
 ## Install instructions
 
-We recommend installing QUEST in a dedicated virtual environment. We currently leverage [Atelier](https://github.com/jtschindler/atelier) to sample from a luminosity function. Unfortunately, due to the design of PyPI, we currently cannot include [Atelier](https://github.com/jtschindler/atelier) as a requirement. It is thus necessary to install it manually:
+We recommend installing QUEST in a dedicated virtual environment. We currently leverage [qsopop](https://github.com/jtschindler/atelier) to sample from a luminosity function. Unfortunately, due to the design of PyPI, we currently cannot include [qsopop](https://github.com/jtschindler/atelier) as a requirement. It is thus necessary to install it manually:
 
 1.  **Create and activate a virtual environment** (e.g., using `venv`):
     ```bash

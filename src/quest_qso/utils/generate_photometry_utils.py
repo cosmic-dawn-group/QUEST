@@ -170,7 +170,7 @@ def parse_config():
         "--luminosity-function",
         type=str,
         default=None,
-        help="Luminosity function from `atelier.lumfun`, defaults to None (i.e., uniform sampling)",
+        help="Luminosity function from `qsopop.lumfun`, defaults to None (i.e., uniform sampling)",
     )
     parser.add_argument(
         "--sky-area",
