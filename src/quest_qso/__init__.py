@@ -147,15 +147,18 @@ def warn_once(logger: logging.Logger, msg: str):
 # ==================== Setup local path once and for all ==================== #
 # =========================================================================== #
 
-LOCAL_PATH = os.getenv("QUEST_LOCALPATH")
+LOCAL_PATH = os.getenv("QUEST_LOCAL_PATH")
 
 if LOCAL_PATH is None:
     LOCAL_PATH = Path.home() / ".QUEST_LOCAL_PATH"
     LOCAL_PATH.mkdir(parents=True, exist_ok=True)
 else:
     LOCAL_PATH = Path(LOCAL_PATH)
+    if not LOCAL_PATH.exists():
+        logger.info(f"{LOCAL_PATH} does not exist, creating it.")
+        LOCAL_PATH.mkdir(parents=True, exist_ok=True)
 
-logger.info(f"Using LOCAL_PATH = {LOCAL_PATH}.")
+logger.info(f"Using LOCAL_PATH: {LOCAL_PATH}.")
 
 # =========================================================================== #
 # ================= Add log to file if the user requests it ================= #
@@ -185,7 +188,7 @@ if log_to_file in [True, "True", "true", "1"]:
 # ====================== Be nice to other users as well ===================== #
 # =========================================================================== #
 
-if os.getenv("QUESTO_AM_I_ON_SHARED_SERVER", False) in [True, "True", "true", "1"]:
+if os.getenv("QUEST_AM_I_ON_SHARED_SERVER", False) in [True, "True", "true", "1"]:
     max_n_cpu = min(len(os.sched_getaffinity(0)) // 3, DEFAULT_MAX_N_CPU)
     torch.set_num_threads(max_n_cpu)
     logger.warning(
