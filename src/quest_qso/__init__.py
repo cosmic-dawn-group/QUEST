@@ -147,7 +147,7 @@ def warn_once(logger: logging.Logger, msg: str):
 # ==================== Setup local path once and for all ==================== #
 # =========================================================================== #
 
-LOCAL_PATH = os.getenv("QUEST_LOCAL_PATH")
+LOCAL_PATH = os.getenv("QUEST_LOCALPATH")
 
 if LOCAL_PATH is None:
     LOCAL_PATH = Path.home() / ".QUEST_LOCAL_PATH"
