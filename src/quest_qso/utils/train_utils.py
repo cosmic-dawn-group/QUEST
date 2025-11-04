@@ -65,7 +65,7 @@ def make_checkpoint_plot(
 
     with torch.no_grad():
         for loader in [loader_train, loader_valid]:
-            gmm, _ = utilities.create_latent_space_gmm(
+            gmm, _, _ = utilities.create_latent_space_gmm(
                 model,
                 loader,
                 n_components=n_components,

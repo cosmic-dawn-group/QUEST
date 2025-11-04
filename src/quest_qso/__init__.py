@@ -63,18 +63,15 @@ e_handler = logging.StreamHandler(sys.stderr)
 
 # file handler
 home_dir = Path.home()
-f_handler = logging.FileHandler(home_dir / "quest_qso.log")
 
 # messages lower than WARNING go to stdout
 # messages >= WARNING (and >= STDOUT_LOG_LEVEL) go to stderr
 i_handler.addFilter(LogFilter(FLT_LEVEL))
 e_handler.setLevel(max(MIN_LEVEL, FLT_LEVEL))
-f_handler.setLevel(MIN_LEVEL)
 
 # formatter
 i_handler.setFormatter(formatter)
 e_handler.setFormatter(formatter)
-f_handler.setFormatter(formatter)
 
 # =========================================================================== #
 

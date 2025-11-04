@@ -127,13 +127,19 @@ def prepare_input(
 ## ========================================================================= ##
 
 
-def create_latent_space_gmm(model, data_loader, n_components=3):
+def create_latent_space_gmm(model, data_loader, n_components=3, verbose=False):
+    logger.info(
+        f"Fitting GMM on latent space posterios, using {n_components} components."
+    )
     z = model.latent_space_posterior(data_loader)["z"]
 
-    gmm = GaussianMixture(n_components=n_components)
-    gmm.fit(z)
+    percentiles = np.percentile(z, q=[1.0, 99.0], axis=0)
+    cleaned_z = z[np.all((z < percentiles[1]) & (z > percentiles[0]), axis=1)]
 
-    return gmm, z
+    gmm = GaussianMixture(n_components=n_components, verbose=verbose)
+    gmm.fit(cleaned_z)
+
+    return gmm, z, cleaned_z
 
 
 ## ========================================================================= ##
@@ -290,7 +296,9 @@ def download_lusso(outpath=local_path, force_download=False):
 
 
 def load_lusso_15(
-    cut_at=1020, outpath=local_path, force_download=False
+    cut_at=1020,
+    outpath=local_path,
+    force_download=False,
 ):  # aa, in units of the provided data
     qso_model = download_lusso(outpath=outpath, force_download=force_download)
 

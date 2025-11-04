@@ -581,9 +581,10 @@ def sample_from_VAE(
     dispersion_units=units.AA,
     graft_lusso_template=True,
     torch_device=utilities.set_device(),
-    gmm_n_components=10,
+    gmm_n_components=3,
 ):
     # Set up the paths
+    # TODO: Fix this loading function, it is a mess
     training_set_dir = Path(local_path / "SDSS_DR16Q")
 
     training_set_fname = (
@@ -624,12 +625,14 @@ def sample_from_VAE(
     # Sample sources from the VAE
     with torch.no_grad():
         logger.info("Sampling from model.")
-        gmm, _ = utilities.create_latent_space_gmm(
+        logger.debug("Creating latent space GMM.")
+        gmm, _, _ = utilities.create_latent_space_gmm(
             model,
             data_loader,
             n_components=gmm_n_components,
         )
 
+        logger.debug("Sampling spectra from model.")
         # some weird results, not sure
         #  for now work with SDSS spectrum for quality control, I know the mag output
         # This does not work, changed based on what we discussed on 2024/04/19

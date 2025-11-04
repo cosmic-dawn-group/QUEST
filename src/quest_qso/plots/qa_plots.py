@@ -1601,7 +1601,7 @@ def all_qa_plots(
 
     # directly fit the GMM, no need to do this multiple times
     logger.info("Fitting GMM to latent space.")
-    gmm, qa_z = utilities.create_latent_space_gmm(
+    gmm, qa_z, qa_z_clean = utilities.create_latent_space_gmm(
         trained_model,
         qa_dataloader,
         n_components=10,
