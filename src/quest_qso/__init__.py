@@ -28,7 +28,7 @@ REGULARIZATION_WEIGHT = 1e-1
 LATENT_DIMENSIONS = 8
 DEFAULT_DATASET_PARENT_DIR = "SDSS_DR16Q"
 DEFAULT_DATASET = "SDSS_DR16Q_3650_9800_2300_2600_dv140_extended.npz"
-DEFAULT_MAX_N_CPU = 8
+DEFAULT_MAX_N_CPU = os.getenv("QUEST_DEFAULT_MAX_N_CPU", 8)
 
 # =========================================================================== #
 # ================================= Logging ================================= #
@@ -193,15 +193,15 @@ if os.getenv("QUEST_AM_I_ON_SHARED_SERVER", False) in [True, "True", "true", "1"
     )
 
     # optionally also set a niceness level
-    if os.environ.get("NICE_LVL"):
-        nice_lvl = int(os.environ.get("NICE_LVL"))
+    if os.getenv("QUEST_NICENESS_LVL", None):
+        nice_lvl = int(os.getenv("QUEST_NICENESS_LVL"))
         if nice_lvl <= 0:
             logger.warning(
-                f"Nice level must be greater than zero, received {nice_lvl}."
+                f"Niceness level must be greater than zero, received {nice_lvl}."
             )
         else:
             os.nice(nice_lvl)
-            logger.warning(f"Set the nice level to {nice_lvl}.")
+            logger.warning(f"Set the niceness level to {nice_lvl}.")
 
 
 # =========================================================================== #
@@ -226,17 +226,17 @@ logger.info(f"Using device: {DEVICE}.")
 # =========================================================================== #
 
 # https://pytorch.org/docs/stable/notes/randomness.html
-if os.getenv("QUEST_TORCH_SEED", None):
-    seed = int(os.environ.get("QUEST_TORCH_SEED"))
-    if seed > 0:
-        logger.warning(f"Setting torch seed to {seed} for reproducibility.")
-        torch.manual_seed(seed)
+if os.getenv("QUEST_SEED", None):
+    QUEST_SEED = int(os.environ.get("QUEST_SEED"))
+    if QUEST_SEED > 0:
+        logger.warning(f"Setting torch seed to {QUEST_SEED} for reproducibility.")
+        torch.manual_seed(QUEST_SEED)
     else:
         logger.info("Not setting any torch seed.")
 else:
-    seed = 42
-    logger.warning(f"Setting torch seed to {seed} for reproducibility.")
-    torch.manual_seed(seed)
+    QUEST_SEED = 42
+    logger.warning(f"Setting torch seed to {QUEST_SEED} for reproducibility.")
+    torch.manual_seed(QUEST_SEED)
 
 # =========================================================================== #
 # =========================================================================== #

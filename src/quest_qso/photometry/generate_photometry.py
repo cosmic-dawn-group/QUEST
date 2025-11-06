@@ -20,6 +20,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import quest_qso.photometry.igm_simqso as igm
+from quest_qso import DEFAULT_MAX_N_CPU as n_cpu
 from quest_qso import LOCAL_PATH as local_path
 from quest_qso.models.info_vae import InfoSpecVAE
 from quest_qso.utils import deredden, load, utilities
@@ -286,7 +287,7 @@ def resample_on_wavelength_grid(
     else:
         new_dispersion = new_rest_frame_dispersion
 
-    with ProcessPoolExecutor(max_workers=2) as executor:
+    with ProcessPoolExecutor(max_workers=n_cpu) as executor:
         # I am not really interested in the order, but given it can be preserved without too much effort, I'll
         #  keep this
         tasks = {
@@ -721,6 +722,7 @@ def redden_sampled_spectra(
     )
     logger.info("Reddening spectra...")
     ne.redden(a_lambda, spectra, inplace=True)
+    logger.info("Reddening completed.")
 
     return spectra
 
